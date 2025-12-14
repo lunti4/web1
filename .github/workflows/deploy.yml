@@ -1,0 +1,71 @@
+name: Deploy Flask App
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    
+    - name: Test imports
+      run: |
+        cd flaskapp
+        python -c "
+        try:
+            from flask_app import app
+            print('✅ Flask app imports successfully')
+            
+            routes = [rule.rule for rule in app.url_map.iter_rules()]
+            print(f'   Available routes: {routes}')
+            
+            print(f'   Upload folder: {app.config.get(\"UPLOAD_FOLDER\")}')
+            print(f'   reCAPTCHA configured: {\"RECAPTCHA_PUBLIC_KEY\" in app.config}')
+            
+        except Exception as e:
+            print(f'❌ Error importing app: {e}')
+            import traceback
+            traceback.print_exc()
+            exit(1)
+        "
+    
+    - name: Test server startup
+      run: |
+        cd flaskapp
+        echo "Testing Gunicorn server startup..."
+        timeout 5s gunicorn --bind 127.0.0.1:8080 wsgi:app &
+        sleep 2
+        if ps aux | grep gunicorn | grep -v grep; then
+            echo "✅ Server started successfully"
+            pkill -f gunicorn
+        else
+            echo "❌ Server failed to start"
+            exit 1
+        fi
+    
+    - name: Check static files
+      run: |
+        echo "Checking project structure..."
+        ls -la flaskapp/
+        echo "Checking templates..."
+        ls -la flaskapp/templates/
+        echo "Checking static folder..."
+        ls -la flaskapp/static/
